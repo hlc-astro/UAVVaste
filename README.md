@@ -4,6 +4,13 @@
 
 # UAVVaste dataset
 
+This is a project to fine tune the META Segment-Anything-Model (SAM), using the UAVVaste dataset as the domain-specific training set. The details of the UAVVaste dataset can be found below. 
+
+
+
+
+
+
 The UAVVaste dataset consists to date of 772 images and 3718 annotations. The main motivation for the creation of the dataset was the lack of domain-specific data. Therefore, this image set is recommended for object detection evaluation benchmarking but also for developing solutions related to UAVs, remote sensing, or even environmental cleaning. The dataset is made publicly available and will be expanded.
 
 <center>
