@@ -4,7 +4,7 @@
 
 # UAVVaste dataset
 
-This is a project to fine tune the META Segment-Anything-Model (SAM), using the UAVVaste dataset as the domain-specific training set. This repository is a brach of the UAVVaste dataset repo (details can be found below. This project is inspired by the capstone project for Constructor Learning, Data Science Bootcamp. 
+This is a project to fine tune the META Segment-Anything-Model (SAM), using the UAVVaste dataset as the domain-specific training set. This repository is a brach of the UAVVaste dataset repo (details can be found below). This project is inspired by the capstone project for Constructor Learning, Data Science Bootcamp. 
 
 
 
