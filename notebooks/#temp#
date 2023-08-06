@@ -1,0 +1,72 @@
+import json
+import os
+
+# Define complete paths to the input and output JSON files
+#annotations_json_path = '/path/to/input/annotations.json'
+#split_json_path = '/path/to/input/train_val_test_distribution_file.json'
+#output_json_path = '/path/to/output/train_annotations.json'
+
+# Define complete paths to the input and output JSON files
+annotations_json_path = '/Users/capelo/Desktop/constructor/final_project/fine_tune_sam/UAVVaste/branch_UAVVaste/UAVVaste/annotations/annotations.json'
+split_json_path = '/Users/capelo/Desktop/constructor/final_project/fine_tune_sam/UAVVaste/branch_UAVVaste/UAVVaste/annotations/train_val_test_distribution_file_lc.json'
+#output_json_path = '/Users/capelo/Desktop/constructor/final_project/fine_tune_sam/UAVVaste/branch_UAVVaste/UAVVaste/annotations/train_annotations.json'
+
+# Load the train_val_test_distribution_file.json to get the list of train images
+with open(split_json_path) as train_val_test_file:
+    train_val_test_data = json.load(train_val_test_file)
+
+# Get the list of train images from the train split information
+train_images = train_val_test_data.get("train", [])
+# Get the list of train images from the train split information
+test_images = train_val_test_data.get("test", [])
+# Get the list of train images from the train split information
+val_images = train_val_test_data.get("val", [])
+
+# Load the annotations.json file
+with open(annotations_json_path) as annotations_file:
+    annotations_data = json.load(annotations_file)
+
+# Filter the annotations based on the test split information
+test_annotations = [ann for ann in annotations_data['annotations'] if annotations_data['images'][ann['image_id']]['file_name'] in test_images]
+train_annotations = [ann for ann in annotations_data['annotations'] if annotations_data['images'][ann['image_id']]['file_name'] in train_images]
+val_annotations = [ann for ann in annotations_data['annotations'] if annotations_data['images'][ann['image_id']]['file_name'] in val_images]
+
+### here check how you are defining the annotations data for each category... repeat for train and val 
+
+# Get the unique image IDs from the test annotations
+test_image_ids = {ann['image_id'] for ann in test_annotations}
+train_image_ids = {ann['image_id'] for ann in train_annotations}
+val_image_ids = {ann['image_id'] for ann in val_annotations}
+
+# Create the reduced annotations data with test images and test annotations
+test_reduced_annotations_data = {
+    "images": test_images_info,
+    "categories": test_categories,
+    "annotations": test_annotations
+}
+
+# Save the reduced_annotations_data as a JSON file in a COCO-like structure with indentation
+with open('test_reduced_annotations.json', 'w') as reduced_annotations_file:
+    json.dump(test_reduced_annotations_data, reduced_annotations_file, indent=2)
+
+# Create the reduced annotations data with train images and test annotations
+train_reduced_annotations_data = {
+    "images": train_images_info,
+    "categories": train_categories,
+    "annotations": train_annotations
+}
+
+# Save the reduced_annotations_data as a JSON file in a COCO-like structure with indentation
+with open('train_reduced_annotations.json', 'w') as reduced_annotations_file:
+    json.dump(train_reduced_annotations_data, reduced_annotations_file, indent=2)
+
+# Create the reduced annotations data with val images and test annotations
+val_reduced_annotations_data = {
+    "images": val_images_info,
+    "categories": val_categories,
+    "annotations": val_annotations
+}
+
+# Save the reduced_annotations_data as a JSON file in a COCO-like structure with indentation
+with open('val_reduced_annotations.json', 'w') as reduced_annotations_file:
+    json.dump(val_reduced_annotations_data, reduced_annotations_file, indent=2)

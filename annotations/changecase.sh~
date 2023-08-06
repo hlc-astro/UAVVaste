@@ -1,0 +1,5 @@
+#!/bin/bash
+
+for file in /path/to/files/*.JPG; do
+    mv "$file" "${file%.JPG}.jpg"
+done

@@ -1,0 +1,96 @@
+# Mount/connect my google drive
+from google.colab import drive
+drive.mount('/content/drive')
+
+
+
+#path_to_images = '/content/drive/MyDrive/Data/UAVVaste/test_train_val/images/train'
+path_to_images = './sample_data/images/'
+#path_to_masks = '/content/drive/MyDrive/Data/UAVVaste/test_train_val/masks/train'
+#path_to_json = ' /content/drive/MyDrive/Data/UAVVaste/train_reduced_annotations.json'
+path_to_json = './sample_data/train_reduced_annotations.json'
+#!pip install segment-anything
+! pip install git+https://github.com/facebookresearch/segment-anything.git &> /dev/null
+#! wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth &> /dev/null
+! wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth &> /dev/null
+
+#model_type = 'vit_b'
+#checkpoint = './sam_vit_b_01ec64.pth'
+
+model_type = 'vit_h'
+checkpoint = './sam_vit_h_4b8939.pth'
+
+from segment_anything import SamPredictor, sam_model_registry, utils
+from torch.utils.data import DataLoader
+from torchvision import transforms
+from PIL import Image
+import torch
+import os
+import sys
+
+# Loading the model
+#sam = sam_model_registry[model_type](checkpoint=checkpoint)
+#predictor = SamPredictor(sam)
+sam_model = sam_model_registry[model_type](checkpoint=checkpoint)
+
+
+
+import torch.nn.functional as F
+from torchvision.transforms import Resize
+
+# Load custom dataset
+custom_dataset = CustomDataset(root_dir=path_to_images, json_path=path_to_json)
+
+# Create a DataLoader
+dataloader = DataLoader(custom_dataset, batch_size=4, shuffle=True)
+
+# Fine-tuning the model
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+sam_model.to(device)
+sam_model.train()
+
+# Set up optimizer
+optimizer = torch.optim.Adam(sam_model.mask_decoder.parameters())
+
+# Set up loss function
+loss_fn = torch.nn.MSELoss()
+
+# Training loop
+num_epochs = 2
+for epoch in range(num_epochs):
+    for batch in dataloader:
+        input_image, gt_binary_mask, bboxes = batch['image'], batch['masks'], batch['bboxes']
+        input_image, gt_binary_mask = input_image.to(device), gt_binary_mask.to(device)
+
+        # Image encoding
+        with torch.no_grad():
+            image_embedding = sam_model.image_encoder(input_image)
+
+        # Prompt encoding
+        with torch.no_grad():
+            # Update this part based on your prompt encoder usage
+            sparse_embeddings, dense_embeddings = sam_model.prompt_encoder(points=None, boxes=bboxes, masks=None)
+
+        # Mask decoding
+        low_res_masks, iou_predictions = sam_model.mask_decoder(
+            image_embeddings=image_embedding,
+            image_pe=sam_model.prompt_encoder.get_dense_pe(),
+            sparse_prompt_embeddings=sparse_embeddings,
+            dense_prompt_embeddings=dense_embeddings,
+            multimask_output=False,
+        )
+
+        # Postprocessing
+        upscaled_masks = sam_model.postprocess_masks(low_res_masks, input_size, original_image_size).to(device)
+
+        # Generate binary mask
+        binary_mask = F.normalize(F.threshold(upscaled_masks, 0.0, 0)).to(device)
+
+        # Calculate loss and backpropagate
+        loss = loss_fn(binary_mask, gt_binary_mask)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+# Save the fine-tuned model
+#torch.save(sam_model.state_dict(), 'fine_tuned_sam.pth')

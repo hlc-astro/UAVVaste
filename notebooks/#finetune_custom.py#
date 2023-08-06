@@ -1,0 +1,191 @@
+# Mount/connect my google drive
+from google.colab import drive
+drive.mount('/content/drive')
+
+
+
+path_to_images = '/content/drive/MyDrive/Data/UAVVaste/test_train_val/images/train'
+#path_to_masks = '/content/drive/MyDrive/Data/UAVVaste/test_train_val/masks/train'
+path_to_json = ' /content/drive/MyDrive/Data/UAVVaste/train_reduced_annotations.json'
+
+
+#!pip install segment-anything
+! pip install git+https://github.com/facebookresearch/segment-anything.git &> /dev/null
+#! wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth &> /dev/null
+! wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth &> /dev/null
+
+#model_type = 'vit_b'
+#checkpoint = './sam_vit_b_01ec64.pth'
+
+model_type = 'vit_h'
+checkpoint = './sam_vit_h_4b8939.pth'
+
+from segment_anything import SamPredictor, sam_model_registry, utils
+from torch.utils.data import DataLoader
+from torchvision import transforms
+from PIL import Image
+import torch
+import os
+import sys
+
+# Loading the model
+#sam = sam_model_registry[model_type](checkpoint=checkpoint)
+#predictor = SamPredictor(sam)
+sam_model = sam_model_registry[model_type](checkpoint=checkpoint)
+
+#### part where we define custom dataset ####
+
+import os
+import json
+import numpy as np
+from PIL import Image, ImageDraw
+import torch
+from torchvision.transforms import ToTensor, Normalize, Compose, Resize
+
+class CustomDataset(torch.utils.data.Dataset):
+    def __init__(self, root_dir, json_dir, transform=None):
+        self.root_dir = root_dir
+        self.json_dir = json_dir
+        self.transform = transform
+        self.images = os.listdir(self.root_dir)
+
+    def __len__(self):
+        return len(self.images)
+
+    def preprocess(self, x):
+        x = Resize((224, 224))(x)
+        x = ToTensor()(x)
+        x = Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])(x)
+        return x
+
+    def extract_masks_bboxes_from_json(self, json_path, image_id):
+        with open(json_path) as json_file:
+            data = json.load(json_file)
+
+        annotations = [ann for ann in data.get("annotations", []) if ann["image_id"] == image_id]
+
+        masks = []
+        bboxes = []
+
+        for annotation in annotations:
+            segmentation = annotation.get("segmentation")
+            bbox = annotation.get("bbox")
+
+            if segmentation is not None:
+                mask = Image.new('L', (annotation["width"], annotation["height"]), 0)
+                draw = ImageDraw.Draw(mask)
+
+                for segment in segmentation:
+                    flattened_segment = [int(coord) for coord in segment]
+                    coordinates = [(flattened_segment[i + 1], flattened_segment[i]) for i in range(0, len(flattened_segment), 2)]
+                    draw.polygon(coordinates, outline=255, fill=255)
+
+                masks.append(mask)
+
+            if bbox is not None and len(bbox) == 4:
+                x, y, w, h = bbox
+                x1, y1, x2, y2 = int(x), int(y), int(x + w), int(y + h)
+                bboxes.append((x1, y1, x2, y2))
+
+        return masks, bboxes
+
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+
+        img_name = os.path.join(self.root_dir, self.images[idx])
+        json_name = os.path.splitext(self.images[idx])[0] + '.json'
+        json_path = os.path.join(self.json_dir, json_name)
+
+        image = Image.open(img_name)
+
+        if self.transform:
+            image = self.transform(image)
+
+        # Preprocess the image
+        image = self.preprocess(image)
+
+        # Extract masks and bounding boxes from JSON
+        image_id = int(os.path.splitext(self.images[idx])[0])
+        masks, bboxes = self.extract_masks_bboxes_from_json(json_path, image_id)
+
+        # Convert masks to binary mask (optional)
+        binary_masks = [torch.tensor(np.array(mask) / 255, dtype=torch.float32) for mask in masks]
+
+        return {'image': image, 'masks': binary_masks, 'bboxes': bboxes}
+
+
+
+    #from segment_anything import SamPredictor, sam_model_registry
+#from torch.utils.data import DataLoader
+#from torchvision import transforms
+
+
+import torch.nn.functional as F
+from torchvision.transforms import Resize
+
+
+# Load the SAM model
+#sam_model = sam_model_registry['vit_b'](checkpoint='sam_vit_b_01ec64.pth')
+
+# Set up optimizer
+optimizer = torch.optim.Adam(sam_model.mask_decoder.parameters())
+
+# Set up loss function
+loss_fn = torch.nn.MSELoss()
+
+# Load custom dataset
+# Here, we should replace 'custom_dataset' with the dataset loader
+# Load custom dataset
+# Replace <path_to_images> with the directory containing the image files
+# Replace <path_to_json> with the directory containing the JSON file
+custom_dataset = CustomDataset(root_dir= path_to_images, json_dir= path_to_json )#, transform=transform)
+
+# Create a DataLoader
+dataloader = DataLoader(custom_dataset, batch_size=4, shuffle=True)
+
+# Fine-tuning the model
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+sam_model.to(device)
+sam_model.train()
+
+# Set device, better to use A100
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# Training loop
+num_epochs=2
+for epoch in range(num_epochs):  # num_epochs to be defined
+    for input_image, box_torch, gt_binary_mask in custom_dataset:
+        input_image, box_torch, gt_binary_mask = input_image.to(device), box_torch.to(device), gt_binary_mask.to(device)
+
+        # Image encoding
+        with torch.no_grad():
+            image_embedding = sam_model.image_encoder(input_image)
+
+        # Prompt encoding
+        with torch.no_grad():
+            sparse_embeddings, dense_embeddings = sam_model.prompt_encoder(points=None, boxes=box_torch, masks=None)
+
+        # Mask decoding
+        low_res_masks, iou_predictions = sam_model.mask_decoder(
+            image_embeddings=image_embedding,
+            image_pe=sam_model.prompt_encoder.get_dense_pe(),
+            sparse_prompt_embeddings=sparse_embeddings,
+            dense_prompt_embeddings=dense_embeddings,
+            multimask_output=False,
+        )
+
+        # Postprocessing
+        upscaled_masks = sam_model.postprocess_masks(low_res_masks, input_size, original_image_size).to(device)
+
+        # Generate binary mask
+        binary_mask = F.normalize(F.threshold(upscaled_masks, 0.0, 0)).to(device)
+
+        # Calculate loss and backpropagate
+        loss = loss_fn(binary_mask, gt_binary_mask)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+# Save the fine-tuned model
+#torch.save(sam_model.state_dict(), 'fine_tuned_sam.pth')
