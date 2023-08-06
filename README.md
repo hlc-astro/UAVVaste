@@ -41,9 +41,13 @@ pip3 install -r requirements.txt
 python3 main.py
 ```
 
-# Contribute
+## Notebooks
+The notebooks in the Notebooks directory help to prepare the data for finetuning. In particular, we sort the images according to their test-train-split annotations using filter_json_coco_style.ipynb. There are various examples of the finetuning data input format. The notebook filter_json_coco-style.ipynb can be used to convert the coco-style json annotations (masks and bounding boxes) to either .jpg or zipped numpy arrays .npz. The notebook custom_dataset_coco_json.ipynb is a batch dataloadedr which can be used to directly read in the .json files so that they can be then worked upon with pytorch, for training, transfer learning, or fine-tuning. 
 
-If you want to contribute to the UAVVaste dataset, please contact us via email [vision@put.poznan.pl](vision@put.poznan.pl). We will be grateful for all images taken from the UAV with litter annotations in the COCO format (bounding boxes and segmentation masks).
+custom_dataset_coco_json.ipynb
+filter_json_coco_style.ipynb
+hlc_convert_json_RAVV.ipynb
+
 
 # Citation
 
